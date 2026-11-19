@@ -18,6 +18,7 @@
 param(
   [string]$Archive,
   [switch]$VerifyOnly,
+  [switch]$DryRun,
   [ValidateSet('auto', 'repo', 'donor')]
   [string]$Source = 'auto',
   [string]$FusionRoot
@@ -94,20 +95,80 @@ if ($pick -eq 'repo' -and $meta.Url -match 'REPLACE_') {
   }
 }
 
+# ── 自动查找本地已有的压缩包 ───────────────────────────────────────
+# 用户自己从 Release 下好了包，但可能放在桌面/下载/D:\游戏 等任意位置。
+# 这里先找一遍，找到大小完全一致的就直接用，不用再填 -Archive。
+function Find-LocalArchive {
+  param([long]$ExpectedBytes, [string]$AssetName)
+
+  $hits = @()
+  $tried = @()
+
+  # 搜索根：用户目录常见位置 + 各盘根 + 一两级子目录
+  $roots = @()
+  foreach ($d in @("$env:USERPROFILE\Desktop", "$env:USERPROFILE\Downloads", "$env:USERPROFILE\Documents", $env:TEMP, (Get-Location).Path)) {
+    if ($d -and (Test-Path $d)) { $roots += $d }
+  }
+  foreach ($drive in (Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -ne $null })) {
+    if (Test-Path $drive.Root) { $roots += $drive.Root }
+  }
+
+  foreach ($root in ($roots | Select-Object -Unique)) {
+    # 先按名字找
+    $found = @()
+    try {
+      $found = Get-ChildItem $root -Filter "*fusion-runtime*" -File -Recurse -Depth 2 -ErrorAction SilentlyContinue
+    } catch {}
+    # 名字不完全匹配时，退一步按大小找（用户可能改过名）
+    if (-not $found) {
+      try {
+        $found = Get-ChildItem $root -Filter "*.zip" -File -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+          Where-Object { $_.Length -eq $ExpectedBytes }
+      } catch {}
+    }
+    foreach ($f in $found) {
+      if ($tried -contains $f.FullName) { continue }
+      $tried += $f.FullName
+      if ($f.Length -eq $ExpectedBytes) { $hits += $f }
+    }
+    if ($hits.Count -gt 0) { break }   # 找到就不继续扫别的根
+  }
+
+  if ($hits.Count -gt 0) {
+    # 多份就取最新的
+    return ($hits | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+  }
+  return $null
+}
+
 # ── 取压缩包 ───────────────────────────────────────────────────────
 $work = Join-Path $env:TEMP 'ig5-runtime-dl'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
-$zip = if ($Archive) { $Archive } else { Join-Path $work $meta.Asset }
 
 # 预先算好可读大小，避免在双引号里内联除法（PowerShell 会把 1GB 当单位字面量）
 $sizeGb = [math]::Round($meta.Bytes / 1073741824, 2)
+
+if ($Archive) {
+  $zip = $Archive
+} else {
+  Write-Host "`n=== 查找本地已有的运行时包 ==="
+  $local = Find-LocalArchive -ExpectedBytes $meta.Bytes -AssetName $meta.Asset
+  if ($local) {
+    Write-Host "  找到: $local"
+    Write-Host "  大小: $([math]::Round((Get-Item $local).Length/1MB,1)) MB ✅ 与期望一致"
+    $zip = $local
+  } else {
+    Write-Host "  本机没有匹配的包（大小需为 $($meta.Bytes) 字节），将自动下载。"
+    $zip = Join-Path $work $meta.Asset
+  }
+}
 
 # 已有文件是否完整？残缺文件（上次下载中断）不能直接跳过，否则后面校验必挂。
 $needDownload = $true
 if (Test-Path $zip) {
   $have = (Get-Item $zip).Length
   if ($have -eq $meta.Bytes) {
-    Write-Host "`n已有完整压缩包，跳过下载: $zip"
+    Write-Host "`n使用压缩包: $zip"
     $needDownload = $false
   } elseif ($Archive) {
     throw "指定的压缩包大小不符: 期望 $($meta.Bytes), 实际 $have`n文件: $zip"
@@ -154,6 +215,15 @@ if ($actualSha -ne $meta.Sha) {
   throw "SHA-256 不符:`n  期望 $($meta.Sha)`n  实际 $actualSha"
 }
 Write-Host "SHA-256 OK"
+
+if ($DryRun) {
+  Write-Host ""
+  Write-Host "=== (dry-run) 到此为止 ==="
+  Write-Host "  压缩包已确认可用: $zip"
+  Write-Host "  将解包到: $runtimeDir"
+  Write-Host "  去掉 -DryRun 即真正安装。"
+  exit 0
+}
 
 # ── 解包（兼容压平版与供体版）─────────────────────────────────────
 Write-Host "`n=== 解包 ==="

@@ -38,6 +38,29 @@ runtime.ghidra.available: true
 ready: true
 ```
 
+### 运行时包会自动查找
+
+自己从 Release 下好了 `fusion-runtime-1.29GB.zip`？**不用填路径**，直接装就行：
+
+```powershell
+.\setup\install.ps1
+```
+
+脚本会扫描桌面、下载、文档、临时目录和各盘根（含两层子目录），
+找到字节数等于 `826929284` 的包就直接用，找不到才下载。
+
+想指定别处或改过名：
+
+```powershell
+.\setup\install.ps1 -RuntimeArchive "D:\任意位置\任意名字.zip"
+```
+
+只验证不解包：
+
+```powershell
+.\setup\install-runtime.ps1 -DryRun
+```
+
 ### 想跳过 1.3 GB 运行时？
 
 ```powershell
