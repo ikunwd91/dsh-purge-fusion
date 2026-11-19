@@ -16,8 +16,18 @@ cd D:\dsh-purge-fusion
 # 2. 一键接入
 .\setup\install.ps1
 
-# 3. 完全退出 DSH 桌面端（托盘也退），再启动
+# 3. DSH 打开后，在 dsh-purge 面板点「应用」
+
+# 4. 让补丁真正生效（关键，见下）
+.\setup\take-effect.ps1
+
+# 5. 完全退出 DSH 桌面端（托盘也退），再启动
 ```
+
+> **第 4 步不能省。** DSH 是 Electron 应用，默认优先读 `resources\app.asar`。
+> 插件补丁写进 `resources\app\`，只要 asar 还在，运行中的 DSH 就读不到 ——
+> 表现为插件"装了但没效果"，甚至反复弹「应用无法启动」。
+> `take-effect.ps1` 会先校验 `resources\app` 完整性，再把 asar 改名，带 `-Rollback` 回滚。
 
 启动后调用 `purge_engine_tools`，期望：
 
@@ -81,6 +91,7 @@ dsh-purge-fusion/
 ├── setup/
 │   ├── install.ps1           一键接入
 │   ├── install-runtime.ps1   运行时下载/校验/解包
+│   ├── take-effect.ps1       app.asar 改名，让补丁真正生效（带校验与回滚）
 │   └── reapply-fusion.ps1    被官方更新覆盖后用 git 恢复
 ├── package.json
 └── cordis.patch.yml          插件挂载配置（含 dsh-purge-fusion 行）

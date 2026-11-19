@@ -49,22 +49,29 @@ if (-not $root) { throw "找不到 DSH 安装目录。用 -DshRoot 'D:\...' 手�
 
 $res = Join-Path $root 'resources'
 $asar = Join-Path $res 'app.asar'
-$bak = Join-Path $res 'app.asar.bak'
 $appDir = Join-Path $res 'app'
+
+# 备份名兼容两种：本脚本的 app.asar.bak，以及手工/其他工具的 app.asar.purge-bak-<时间戳>
+function Get-AsarBackups {
+  return @(Get-ChildItem $res -Filter 'app.asar*bak*' -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne 'app.asar' } | Sort-Object LastWriteTime -Descending)
+}
+$backups = Get-AsarBackups
 
 Write-Host "=== DSH 目录检查 ==="
 Write-Host "  安装根: $root"
-Write-Host "  app.asar  : $(if (Test-Path $asar) { '存在' } else { '不存在' })"
-Write-Host "  app.asar.bak: $(if (Test-Path $bak) { '存在' } else { '不存在' })"
-Write-Host "  app\ 目录 : $(if (Test-Path $appDir) { '存在' } else { '不存在' })"
+Write-Host "  app.asar    : $(if (Test-Path $asar) { '存在' } else { '不存在' })"
+Write-Host "  app.asar 备份: $(if ($backups.Count) { $backups[0].Name } else { '无' })"
+Write-Host "  app\ 目录   : $(if (Test-Path $appDir) { '存在' } else { '不存在' })"
 
 # ── 回滚模式 ───────────────────────────────────────────────────────
 if ($Rollback) {
-  if (-not (Test-Path $bak)) { throw "没有 app.asar.bak，无需回滚。" }
+  if ($backups.Count -eq 0) { throw "找不到 app.asar 备份，无需回滚。" }
   if (Test-Path $asar) { Write-Host "`napp.asar 已存在，无需回滚。"; exit 0 }
-  if ($DryRun) { Write-Host "`n(dry-run) 将把 app.asar.bak 改回 app.asar"; exit 0 }
-  Move-Item $bak $asar
-  Write-Host "`n已回滚：app.asar.bak → app.asar"
+  $pick = $backups[0]
+  if ($DryRun) { Write-Host "`n(dry-run) 将把 $($pick.Name) 改回 app.asar"; exit 0 }
+  Move-Item $pick.FullName $asar
+  Write-Host "`n已回滚：$($pick.Name) → app.asar"
   Write-Host "重启 DSH 后补丁将不再生效（这是原始状态）。"
   exit 0
 }
@@ -111,13 +118,19 @@ if ($DryRun) {
   exit 0
 }
 
-Write-Host "`n=== 改名 app.asar → app.asar.bak ==="
-Move-Item $asar $bak
-Write-Host "  完成。文件保留在: $bak"
+Write-Host "`n=== 改名 app.asar → app.asar.purge-bak-<时间戳> ==="
+Write-Host "  注意：purge 要挪走 asar 必须先结束 host，而被终止的 host 会由"
+Write-Host "  旧 asar 里的原版 main.js 判定为致命 → 弹「应用无法启动」。"
+Write-Host "  改名后重启即读解开目录，#83 生效，弹窗循环中断。"
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$target = Join-Path $res "app.asar.purge-bak-$stamp"
+Move-Item $asar $target
+Write-Host "  完成。备份保留在: $target"
 
 Write-Host ""
 Write-Host "=== 下一步 ==="
 Write-Host "完全退出 DSH（托盘图标右键退出），再启动。"
+Write-Host "启动后不应再出现「应用无法启动 / dsh desktop host stopped」弹窗。"
 Write-Host ""
 Write-Host "启动异常时回滚（一条命令）："
 Write-Host "  .\setup\take-effect.ps1 -Rollback"
