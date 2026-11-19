@@ -1,0 +1,179 @@
+{
+  "layer": "dsh-purge/fusion",
+  "generatedAt": "2026-11-19",
+  "donor": {
+    "repo": "https://github.com/Minglink/dsh-infinite-gen-5",
+    "package": "dsh-infinite-gen-5",
+    "version": "1.3.0",
+    "commit": "8604739aab14e23233c0a2b3783e26a701e9e6bd",
+    "commitDate": "2026-11-12T00:09:56+08:00",
+    "license": "CC BY-NC-SA 4.0 (project code) + third-party licenses in THIRD_PARTY_NOTICES.txt"
+  },
+  "base": {
+    "repo": "https://github.com/mmparko/dsh-purge",
+    "package": "dsh-purge",
+    "version": "1.1.71"
+  },
+  "mirrored": {
+    "note": "供体整树镜像，保持相对 import 结构，除下面 patched 列出的两处外零改动",
+    "trees": [
+      {
+        "path": "source/",
+        "files": 163,
+        "bytes": 1636143,
+        "role": "算法车道：VM/CFF/位向量/协议/加密/研究库/APK/固件"
+      },
+      {
+        "path": "worker/",
+        "files": 138,
+        "bytes": 68491132,
+        "role": "Python worker 后端（反编译/微码/仿真/固件/协议/VM）"
+      },
+      {
+        "path": "adapters/",
+        "files": 87,
+        "bytes": 4323291,
+        "role": "Ghidra/x64dbg/kernel/vmci 引擎适配器"
+      },
+      {
+        "path": "third_party/",
+        "files": 21,
+        "bytes": 3844883,
+        "role": "第三方组件（lcm/x64dbg-build/scyllahide-licenses）"
+      },
+      {
+        "path": "scripts/",
+        "files": 155,
+        "bytes": 3519000,
+        "role": "构建/校验脚本（顶层存在性校验依赖）"
+      },
+      {
+        "path": "skills/",
+        "files": 13,
+        "bytes": 115358,
+        "role": "供体原技能（供体 workflow.js 也从这里读）"
+      }
+    ],
+    "rootFiles": [
+      "engine_runtime.js",
+      "advanced_tools.js",
+      "analysis_tools.js",
+      "capture_tools.js",
+      "integration_tools.js",
+      "workflow.js",
+      "semantic_diff.js",
+      "semantic_diff_async.js",
+      "semantic_diff_worker.js",
+      "donor-index.js"
+    ]
+  },
+  "patched": [
+    {
+      "file": "donor-index.js",
+      "origin": "index.js",
+      "upstreamBug": false,
+      "change": "文件末尾追加 export { defineIg5Tools, resolveConfig }",
+      "reason": "只取工具构造函数供诊断用；实际注册走 apply()，不接管宿主生命周期",
+      "logicUnchanged": true
+    },
+    {
+      "file": "adapters/ghidra/worker.py",
+      "location": "m_emulate()",
+      "upstreamBug": true,
+      "problem": "`from cpu_emulator import emulate_image` 前没有插入 sys.path；cpu_emulator.py 位于 <plugin>/worker，不在 adapters/ghidra。真实调用报 ModuleNotFoundError: No module named 'cpu_emulator'。",
+      "change": "补 3 行：shared = ADAPTER_ROOT.parent.parent / 'worker'；不在 sys.path 则 insert。与同文件 decode_strings() 的既有写法完全一致。",
+      "logicChanged": false,
+      "verified": "ig5_emulate 返回真实 Unicorn 结果（ok/engine/registers/fault/reason），不再是模块导入错误",
+      "upstreamFileSha256UnchangedBeforePatch": true
+    }
+  ],
+  "adapters": [
+    {
+      "file": "lib/fusion/engine.js",
+      "role": "引擎适配层：createEngine / wrapDefinition / sanitizeSchema / collectBounds / enforceBounds",
+      "changes": [
+        "cfg.home 重定向到 $DSH_HOME/dsh-purge/fusion/ig5",
+        "ctx 用受控 stub（tools.register 捕获定义；不提供 restrict；inject 返回带 dispose 的 fiber；get 返回 undefined）",
+        "WorkerManager 构造失败降级不抛",
+        "sanitizeSchema 把宿主不支持的 schema 结构降级（见 schemaDowngrade）",
+        "collectBounds + enforceBounds：宿主不执行的数值/长度边界改由本层在调用时裁剪",
+        "wrapDefinition 运行时缺失时给出可操作错误",
+        "目标→引擎映射表：ig5_open 后同目标调用自动补齐 engine",
+        "同名工具首个胜出（供体内部 14 个重叠）"
+      ]
+    },
+    {
+      "file": "lib/fusion/index.js",
+      "role": "融合层入口：5 个 purge_* 工具 + 引擎工具面注册 + 16 个技能",
+      "changes": [
+        "apply() 整体 try/catch（失败软着陆）",
+        "每个工具注册单独 try/catch",
+        "core/full 工具面切换（8↔43），切换不重建引擎"
+      ]
+    }
+  ],
+  "schemaDowngrade": {
+    "reason": "宿主 DSH 0.2.0 的 assertObjectJsonSchema 只接受 type/oneOf/properties/required/additionalProperties/items/enum/const + description/title/default/examples；供体按 0.2.1-alpha.1 写，用了其它关键字，会导致工具注册抛 UNSUPPORTED_SCHEMA。",
+    "hostValidatorDoesNotEnforce": [
+      "minimum",
+      "maximum",
+      "minLength",
+      "maxLength",
+      "minItems",
+      "maxItems",
+      "pattern",
+      "format",
+      "uniqueItems",
+      "multipleOf",
+      "exclusiveMinimum",
+      "exclusiveMaximum"
+    ],
+    "note": "宿主校验器从不执行这些约束，因此删掉它们不会改变宿主的入参校验行为；为保证约束不丢，collectBounds 先把边界记下来，enforceBounds 在每次 execute 前裁剪。",
+    "handledStructures": [
+      "additionalProperties 为 schema 对象 → 降级为 true",
+      "type 与 oneOf 并存 → 删 type 保留 oneOf",
+      "oneOf 旁的 properties/required/additionalProperties/items/enum/const → 删除兄弟键",
+      "只有 enum/const 无 type → 按取值推断补 type",
+      "只有 required/properties/additionalProperties 无 type → 补 type: object",
+      "只有 items 无 type → 补 type: array",
+      "required 列出 properties 里没有的键 → 过滤掉"
+    ],
+    "verified": "43/43 工具 schema 通过宿主 assertObjectJsonSchema；4 个曾被拒的工具（ig5_workspace / ig5_recovery / ig5_emulate / ig5_capture_control）均可执行"
+  },
+  "skills": {
+    "donor": {
+      "origin": "skills/ig5-*",
+      "rewritten": false,
+      "count": 8,
+      "location": "vendor/skills/",
+      "note": "工具名 ig5_* 与本层注册的引擎工具一致，原样可用；含 5 个 references"
+    },
+    "methodology": {
+      "origin": "skills/ig5-* 改写",
+      "rewritten": true,
+      "count": 8,
+      "location": "skills/",
+      "note": "去除 ig5_* 硬依赖，改为工具无关方法论 + purge_* 工具"
+    }
+  },
+  "excluded": [
+    "client.js — 工作台 UI，会与本插件 client.js 的 slot 注册重复",
+    "cordis.patch.yml 注入行 — 本插件提示词只由 lib/index.js 装配钩子负责",
+    "供体 apply() 的 webServer 路由 /ig5-diag /ig5-jobs /ig5-data — 本层不注册任何 HTTP 路由",
+    "供体 approval gate — 不叠加第二套审批门"
+  ],
+  "runtime": {
+    "required": true,
+    "forTools": "ig5_open/decompile/dbg/emulate/ir/microcode/cfg/... 等需要引擎会话的工具",
+    "notRequiredFor": "ig5_package(apk/firmware)、ig5_crypto、ig5_protocol、ig5_bindiff、purge_apk_audit、purge_bindiff",
+    "asset": {
+      "name": "IG5-1.0.0-Windows-x64-dsh021-full-20261010.zip",
+      "bytes": 1064580056,
+      "sha256": "a2459ddca1f19e5eec2d7918c504f133889809800a0b2771e379d3ce1459b54",
+      "url": "https://github.com/Minglink/dsh-infinite-gen-5/releases/download/v1.0.0-dsh021-20261010/IG5-1.0.0-Windows-x64-dsh021-full-20261010.zip"
+    },
+    "installed": "1.29 GB / 6257 files（Ghidra 12.1.4 + JDK 21.0.12.1 + Python 3.12.10 + x64dbg 2026.05.27）",
+    "install": "fusion-patch/install-runtime.ps1",
+    "absentBehavior": "43 个工具照常注册；purge_engine_tools 返回 available=false + 原因；execute 给出可操作提示；不 pending 宿主"
+  }
+}
