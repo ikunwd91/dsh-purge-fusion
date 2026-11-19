@@ -97,41 +97,68 @@ $raw = [System.IO.File]::ReadAllText($profPkgPath, [System.Text.Encoding]::UTF8)
 $profPkg = $raw | ConvertFrom-Json
 
 $linkSpec = 'link:' + ($RepoRoot -replace '\\', '/')
-$needDep = -not ($profPkg.dependencies.PSObject.Properties.Name -contains 'dsh-purge')
-$needBundle = -not ($profPkg.dsh.profile.bundles -contains 'dsh-purge')
+
+# 安全取嵌套属性：全新 profile 可能连 dependencies / dsh 都没有
+function Get-Prop($obj, [string]$name) {
+  if ($null -eq $obj) { return $null }
+  $p = $obj.PSObject.Properties[$name]
+  if ($null -eq $p) { return $null }
+  return $p.Value
+}
+
+$depVal = Get-Prop $profPkg 'dependencies'
+$hasDep = ($null -ne $depVal) -and (@($depVal.PSObject.Properties.Name) -contains 'dsh-purge')
+
+$dshVal = Get-Prop $profPkg 'dsh'
+$profVal = Get-Prop $dshVal 'profile'
+$bundlesVal = Get-Prop $profVal 'bundles'
+$hasBundle = ($null -ne $bundlesVal) -and (@($bundlesVal) -contains 'dsh-purge')
+
+$needDep = -not $hasDep
+$needBundle = -not $hasBundle
 
 if ($DryRun) {
   Write-Host "  (dry-run) 需要加 dependencies: $needDep，需要加 bundles: $needBundle"
   if ($needDep) { Write-Host "            依赖项: `"dsh-purge`": `"$linkSpec`"" }
 } elseif ($needDep -or $needBundle) {
   Copy-Item $profPkgPath "$profPkgPath.bak-install" -Force
-  # 用 Node 改 JSON，保证格式与转义正确
-  $nodeScript = @"
-const fs = require('fs');
-const p = process.argv[1];
-const linkSpec = process.argv[2];
-const needDep = process.argv[3] === '1';
-const needBundle = process.argv[4] === '1';
-const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-if (needDep) {
-  j.dependencies = j.dependencies || {};
-  j.dependencies['dsh-purge'] = linkSpec;
-}
-if (needBundle) {
-  j.dsh = j.dsh || {};
-  j.dsh.profile = j.dsh.profile || {};
-  j.dsh.profile.bundles = j.dsh.profile.bundles || [];
-  if (!j.dsh.profile.bundles.includes('dsh-purge')) j.dsh.profile.bundles.push('dsh-purge');
-}
-fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n', 'utf8');
-"@
-  $tmpJs = Join-Path $env:TEMP "dsh-fusion-pkgpatch.cjs"
-  Write-NoBom $tmpJs $nodeScript
-  node $tmpJs $profPkgPath $linkSpec $(if ($needDep) { '1' } else { '0' }) $(if ($needBundle) { '1' } else { '0' })
-  if ($LASTEXITCODE -ne 0) { throw "改写 profile package.json 失败" }
+  # 用 PowerShell 原生改 JSON，不依赖 node（新机器上可能没装）
+  if ($needDep) {
+    if ($null -eq (Get-Prop $profPkg 'dependencies')) {
+      $profPkg | Add-Member -NotePropertyName dependencies -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    $profPkg.dependencies | Add-Member -NotePropertyName 'dsh-purge' -NotePropertyValue $linkSpec -Force
+  }
+  if ($needBundle) {
+    if ($null -eq (Get-Prop $profPkg 'dsh')) {
+      $profPkg | Add-Member -NotePropertyName dsh -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    if ($null -eq (Get-Prop $profPkg.dsh 'profile')) {
+      $profPkg.dsh | Add-Member -NotePropertyName profile -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    $bundles = @()
+    $existing = Get-Prop $profPkg.dsh.profile 'bundles'
+    if ($null -ne $existing) { $bundles = @($existing) }
+    if ($bundles -notcontains 'dsh-purge') { $bundles += 'dsh-purge' }
+    $profPkg.dsh.profile | Add-Member -NotePropertyName bundles -NotePropertyValue $bundles -Force
+  }
+  $json = $profPkg | ConvertTo-Json -Depth 20
+  Write-NoBom $profPkgPath ($json + "`n")
   Write-Host "  已写入（备份 $profPkgPath.bak-install）"
   if ($needDep) { Write-Host "    dependencies['dsh-purge'] = $linkSpec" }
   if ($needBundle) { Write-Host "    dsh.profile.bundles += 'dsh-purge'" }
+  # 回读校验，防手写坏 JSON
+  try {
+    $check = [System.IO.File]::ReadAllText($profPkgPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    $gotDep = Get-Prop (Get-Prop $check 'dependencies') 'dsh-purge'
+    if ($gotDep -ne $linkSpec) { throw "回读校验失败：dependencies 未写入" }
+    $gotBundles = Get-Prop (Get-Prop (Get-Prop $check 'dsh') 'profile') 'bundles'
+    if (@($gotBundles) -notcontains 'dsh-purge') { throw "回读校验失败：bundles 未写入" }
+    Write-Host "    回读校验 ✅"
+  } catch {
+    Copy-Item "$profPkgPath.bak-install" $profPkgPath -Force
+    throw "改写 profile package.json 失败，已从备份还原：$($_.Exception.Message)"
+  }
 } else {
   Write-Host "  dependencies 与 bundles 都已配置，跳过"
 }
@@ -170,12 +197,37 @@ Write-Host "`n=== 4/4 自检 ==="
 if ($DryRun) {
   Write-Host "  (dry-run) 跳过"
 } else {
-  Push-Location $RepoRoot
-  try {
-    node (Join-Path $RepoRoot 'lib\fusion\selfcheck.mjs')
-    $code = $LASTEXITCODE
-  } finally { Pop-Location }
-  if ($code -ne 0) { Write-Host "`n自检有失败项，请查看上面输出。" } else { Write-Host "`n自检通过。" }
+  # 找 node：PATH 优先，其次 DSH 自带（新机器上常见没装 node）
+  $nodeExe = $null
+  $cmd = Get-Command node -ErrorAction SilentlyContinue
+  if ($cmd) { $nodeExe = $cmd.Source }
+  if (-not $nodeExe) {
+    $deskExe = $null
+    try { $deskExe = Get-Content (Join-Path $DshHome 'dsh-purge\desktop-install.txt') -ErrorAction Stop } catch {}
+    $searchRoots = @()
+    if ($deskExe) { $searchRoots += (Split-Path -Parent $deskExe.Trim()) }
+    foreach ($c in @("D:\DeepSeek-Harness-0.2.0-", "$env:LOCALAPPDATA\Programs")) {
+      if (Test-Path $c) { $searchRoots += $c }
+    }
+    foreach ($r in $searchRoots) {
+      $hit = Get-ChildItem $r -Recurse -Depth 6 -Filter "node.exe" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match 'runtime.*node.*bin' } | Select-Object -First 1
+      if ($hit) { $nodeExe = $hit.FullName; break }
+    }
+  }
+
+  if (-not $nodeExe) {
+    Write-Host "  ⚠ 找不到 node，跳过自检。"
+    Write-Host "    启动 DSH 后调用 purge_engine_tools 确认 activeCount=43 即可。"
+  } else {
+    Write-Host "  使用 node: $nodeExe"
+    Push-Location $RepoRoot
+    try {
+      & $nodeExe (Join-Path $RepoRoot 'lib\fusion\selfcheck.mjs')
+      $code = $LASTEXITCODE
+    } finally { Pop-Location }
+    if ($code -ne 0) { Write-Host "`n自检有失败项，请查看上面输出。" } else { Write-Host "`n自检通过。" }
+  }
 }
 
 Write-Host ""
