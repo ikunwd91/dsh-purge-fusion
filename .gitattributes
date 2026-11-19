@@ -1,0 +1,20 @@
+# 统一换行，避免 Windows/Linux 交叉 clone 时全量 diff
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.dll binary
+*.exe binary
+*.so binary
+*.pyd binary
+*.zip binary
+*.jar binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# PowerShell 脚本保持 CRLF（Windows 友好）
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
