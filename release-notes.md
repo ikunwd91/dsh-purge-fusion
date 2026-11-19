@@ -1,3 +1,23 @@
+# 1.1.72
+
+## 中文
+
+- 版本 **1.1.72**。
+- 移除补丁 **#89 STOP_REASON_TOLERANT**：它把 provider 的 `refusal` / `pause_turn` / 任何未知停止原因一律降级成正常结束，真正的异常被静默吞掉，整轮看起来正常。补丁表已无该项，宿主恢复官方 `stopReason()`（未知原因仍报 `unsupported stop reason`）。
+- 新增遗留回收 `revertLegacyStopReasonTolerant()`：apply 时按标记把上一版写进 `dsh-llm-deepseek` 的 #89 片段还原成官方实现；认不出的形态只报 `partial_unrecognized`，不猜着改。
+- shim 状态语义修正：`gatherState()` 新增 `shim_applies` / `desktop_cli_bin`。desktop 宿主不注入 shim（#82 profile fallback），官方 `runtime/cli/bin` 布局只有 `dsh.cmd`，`dsh.ps1` / `dsh` 本来就不存在 —— 现在显示 `n/a` 而不是永远修不好的 `missing`。
+- `shimIsPatched()` 同时识别 `dsh-purge shim` 与 `dsh-purge cli entry` 两种标记，桌面 `dsh.cmd` 不再被误报成 `original`，`shimNeedsPatch()` 不再空转。
+- `bin/dsh-purge.js --status`：未定位宿主时不再打印 `undefined`，统一显示 `n/a`。
+
+## English
+
+- **1.1.72**.
+- Removed patch **#89 STOP_REASON_TOLERANT**. It downgraded `refusal` / `pause_turn` / any unknown provider stop reason to a normal end, silently swallowing real failures. The host returns to the official `stopReason()` (unknown reasons still raise `unsupported stop reason`).
+- New legacy reclaim `revertLegacyStopReasonTolerant()`: on apply it restores the #89 fragment previously written into `dsh-llm-deepseek`; unrecognized shapes report `partial_unrecognized` instead of guessing.
+- Shim status semantics fixed: `gatherState()` now exposes `shim_applies` / `desktop_cli_bin`. Desktop hosts never inject shims (#82 profile fallback) and the official `runtime/cli/bin` layout only ships `dsh.cmd`, so `dsh.ps1` / `dsh` report `n/a` instead of a permanently missing file.
+- `shimIsPatched()` recognizes both `dsh-purge shim` and `dsh-purge cli entry` markers, so the desktop `dsh.cmd` is no longer misreported as `original` and `shimNeedsPatch()` stops spinning.
+- `bin/dsh-purge.js --status` prints `n/a` instead of `undefined` when no host is located.
+
 # 1.1.71
 
 ## 中文

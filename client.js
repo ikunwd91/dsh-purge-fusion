@@ -1073,10 +1073,15 @@ body:not([data-ds-dark-theme]) .dshp-auth-ops button.primary{background:var(--ds
 		}
 
 		function shimKind(v) {
-			if (v === "patched" || v === "n/a") return "ok";
+			// not_applicable：本宿主不存在这个启动器（desktop 只有 dsh.cmd），算正常，不算缺文件。
+			if (v === "patched" || v === "n/a" || v === "not_applicable") return "ok";
 			if (v === "original") return "wait";
 			if (v === "missing" || !v) return "miss";
 			return "bad";
+		}
+
+		function isShimNa(v) {
+			return v === "n/a" || v === "not_applicable";
 		}
 
 		function noticeNode(notice) {
@@ -1930,7 +1935,7 @@ body:not([data-ds-dark-theme]) .dshp-auth-ops button.primary{background:var(--ds
 							" ",
 							h("span", { className: "dshp-pill is-" + shimKind(s.shim_bin || "missing") }, "unix"),
 						),
-						h("span", null, (s.shim_cmd === "n/a" && s.shim_ps1 === "n/a" && (s.shim_bin === "n/a" || !s.shim_bin)) ? t("metric.shim.na") : t("metric.shim")),
+						h("span", null, (isShimNa(s.shim_cmd) && isShimNa(s.shim_ps1) && (isShimNa(s.shim_bin) || !s.shim_bin)) ? t("metric.shim.na") : t("metric.shim")),
 					),
 					h("div", { className: "dshp-metric" },
 						h("b", null, s.has_backup ? t("metric.bak.yes") : t("metric.bak.no")),

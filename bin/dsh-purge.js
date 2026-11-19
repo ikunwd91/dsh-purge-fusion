@@ -5,7 +5,12 @@ import * as rules from "../lib/rules.js";
 
 const args = process.argv.slice(2);
 
+// desktop 宿主不注入 shim（#82 profile fallback）：官方 cli/bin 只有 dsh.cmd，
+// ps1/sh 本来就不存在。状态里把「不适用」和「缺失」分开显示，否则永远是两条红灯。
+const shimLabel = (v) => (v === "not_applicable" || v === undefined ? "n/a" : v);
+
 function printStatus(state) {
+  const shimApplies = state.shim_applies !== undefined ? state.shim_applies !== false : state.surface !== "desktop";
   const out = [];
   out.push("dsh-purge 状态 / Status");
   out.push("  宿主 / surface " + (state.surface || "web"));
@@ -19,19 +24,20 @@ function printStatus(state) {
   } else {
     out.push("  插件根 / root  " + core.missingAiBaseMessage());
   }
-  out.push(`  shim 目录      ${state.shim_dir || "未定位 / not found"}`);
+  out.push(`  shim 目录      ${state.shim_dir || state.desktop_cli_bin || "未定位 / not found"}`);
   out.push(`  备份 / backup  ${state.has_backup ? "有 / yes" : "无 / no"}`);
   out.push(`  注入文件       ${state.override_path}`);
   out.push(`  注入状态       ${state.override_status}`);
   out.push("");
   out.push(`  补丁 ${state.patches_applied}/${core.ALL_PATCHES.length} 已清洗, ${state.patches_pending} 待清洗`);
   for (const p of core.ALL_PATCHES) {
-    const s = state.patch_status[p.id];
+    const s = state.patch_status?.[p.id] ?? (state.ai_base ? "not_run" : "n/a");
     const mark = s === "applied" ? "✓" : s === "pending" ? "✗" : "·";
     out.push(`    ${mark} [#${String(p.id).padEnd(2)}] ${p.name.padEnd(30)} ${p.layer}/${p.layer_en} — ${s}`);
   }
   out.push("");
-  out.push(`  shim: dsh.cmd=${state.shim_cmd}  dsh.ps1=${state.shim_ps1}  dsh=${state.shim_bin}`);
+  const tail = shimApplies ? "" : "  （desktop 启动器官方布局只有 dsh.cmd；ps1/sh 不适用）";
+  out.push(`  shim: dsh.cmd=${shimLabel(state.shim_cmd)}  dsh.ps1=${shimLabel(state.shim_ps1)}  dsh=${shimLabel(state.shim_bin)}${tail}`);
   return out.join("\n");
 }
 
