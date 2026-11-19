@@ -102,13 +102,44 @@ $zip = if ($Archive) { $Archive } else { Join-Path $work $meta.Asset }
 # 预先算好可读大小，避免在双引号里内联除法（PowerShell 会把 1GB 当单位字面量）
 $sizeGb = [math]::Round($meta.Bytes / 1073741824, 2)
 
-if (-not (Test-Path $zip)) {
+# 已有文件是否完整？残缺文件（上次下载中断）不能直接跳过，否则后面校验必挂。
+$needDownload = $true
+if (Test-Path $zip) {
+  $have = (Get-Item $zip).Length
+  if ($have -eq $meta.Bytes) {
+    Write-Host "`n已有完整压缩包，跳过下载: $zip"
+    $needDownload = $false
+  } elseif ($Archive) {
+    throw "指定的压缩包大小不符: 期望 $($meta.Bytes), 实际 $have`n文件: $zip"
+  } else {
+    Write-Host "`n检测到不完整文件（$have / $($meta.Bytes) 字节），断点续传"
+  }
+}
+
+if ($needDownload) {
   Write-Host "`n=== 下载 $($meta.Asset) ($sizeGb GB) ==="
   Write-Host "来源: $($meta.Url)"
-  # curl 支持断点续传，中断后重跑本脚本会接着下
-  & curl.exe -L --fail --retry 8 --retry-delay 5 --retry-all-errors -C - -o $zip --connect-timeout 30 $meta.Url
-  if ($LASTEXITCODE -ne 0) {
-    throw "下载失败（exit $LASTEXITCODE）。可手动下载后传 -Archive 路径。"
+  # curl 支持断点续传，中断后重跑本脚本会接着下。
+  # --ssl-no-revoke：Windows schannel 查不到证书吊销列表（CRL/OCSP）时会报
+  #   CRYPT_E_NO_REVOCATION_CHECK (0x80092012) 并直接失败。
+  #   这不是证书有问题，是查询服务器不可达；跳过吊销检查即可。
+  & curl.exe --ssl-no-revoke -L --fail --retry 8 --retry-delay 5 --retry-all-errors -C - -o $zip --connect-timeout 30 $meta.Url
+  $curlCode = $LASTEXITCODE
+
+  # curl 挂了退回 .NET 下载（走 Windows 证书链，行为不同，常能过）
+  if ($curlCode -ne 0) {
+    Write-Host "`n  curl 失败（exit $curlCode），改用系统下载器重试…"
+    try {
+      $oldProgress = $ProgressPreference
+      $ProgressPreference = 'SilentlyContinue'   # 大文件时进度条拖慢速度
+      Invoke-WebRequest -Uri $meta.Url -OutFile $zip -TimeoutSec 3600 -UseBasicParsing
+      $ProgressPreference = $oldProgress
+      Write-Host "  系统下载器成功"
+    } catch {
+      # 清掉残缺文件，避免下次又跳过下载
+      if (Test-Path $zip) { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
+      throw "两种下载方式都失败：$($_.Exception.Message)`n可手动下载后传 -Archive 路径。"
+    }
   }
 }
 
