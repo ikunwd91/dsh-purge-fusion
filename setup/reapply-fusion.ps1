@@ -1,4 +1,4 @@
-# reapply-fusion.ps1 —— 插件被官方更新覆盖后，用 git 把融合层恢复回来
+﻿# reapply-fusion.ps1 —— 插件被官方更新覆盖后，用 git 把融合层恢复回来
 #
 # 背景：dsh-purge 的 update.js 用 COPY_NAMES = [lib, bin, docs, client.js,
 #   cordis.patch.yml, screenshots.json, package.json, README*, LICENSE]

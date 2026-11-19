@@ -1,29 +1,55 @@
-# install-runtime.ps1 —— 为 fusion 引擎链路安装 IG5 运行时
+﻿# install-runtime.ps1 —— 为 fusion 引擎链路安装 IG5 运行时
 #
 # 引擎工具（ig5_open/decompile/dbg/emulate 等 43 个）需要 Ghidra + x64dbg 便携运行时。
-# 供体把这份 1.06 GB 资产放在 release 里（git 仓库不含），本脚本负责下载、校验、解包到
-# 本插件自己的 runtimes 目录，不动系统 PATH、不动全局 Python、不影响供体安装。
+# 这份 1.29 GB 资产不进 Git（jdk-21.0.12.1+1/lib/modules 单文件 134.4 MB，
+# 超过 GitHub 单文件 100 MB 硬限制），改走 Release 附件分发。
+#
+# 本脚本兼容两种压缩包结构：
+#   1. 本仓库 Release：压平版，根目录直接是 ghidra/ + x64dbg/ + manifest.json
+#   2. 供体发行包：外层 plugin/runtimes/...
 #
 # 用法：
-#   .\install-runtime.ps1                     # 下载 + 校验 + 解包
-#   .\install-runtime.ps1 -Archive 'D:\ig5.zip'   # 用已有压缩包（离线）
-#   .\install-runtime.ps1 -VerifyOnly         # 只校验当前安装
-#
-# 校验基准来自供体 scripts/distribution.json，SHA256 不符即拒绝安装。
+#   .\install-runtime.ps1                        # 下载 + 校验 + 解包
+#   .\install-runtime.ps1 -Archive 'D:\x.zip'    # 用已有压缩包（离线）
+#   .\install-runtime.ps1 -VerifyOnly            # 只校验当前安装
+#   .\install-runtime.ps1 -Source donor          # 强制从供体发行包取
 
 [CmdletBinding()]
 param(
   [string]$Archive,
   [switch]$VerifyOnly,
-  [string]$FusionRoot = 'C:\Users\Administrator\AppData\Local\dsh-purge-src\dsh-purge-master\lib\fusion'
+  [ValidateSet('auto', 'repo', 'donor')]
+  [string]$Source = 'auto',
+  [string]$FusionRoot
 )
 
 $ErrorActionPreference = 'Stop'
 
-$Asset = 'IG5-1.0.0-Windows-x64-dsh021-full-20261010.zip'
-$Url   = "https://github.com/Minglink/dsh-infinite-gen-5/releases/download/v1.0.0-dsh021-20261010/$Asset"
-$Sha   = 'a2459ddca1f19e5eec2d7918c504f133889809800a0b277e1e379d3ce1459b54'
-$Bytes = 1064580056
+# 默认按本脚本位置推断 fusion 根：<repo>/setup/install-runtime.ps1 → <repo>/lib/fusion
+if (-not $FusionRoot) {
+  $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+  $FusionRoot = Join-Path $repoRoot 'lib\fusion'
+}
+
+# ── 分发源 ─────────────────────────────────────────────────────────
+# repo  = 本仓库 Release（压平版，推荐）
+# donor = 供体 Minglink/dsh-infinite-gen-5 的完整发行包（压平版的来源）
+$Sources = @{
+  repo  = @{
+    Asset = 'fusion-runtime-1.29GB.zip'
+    Url   = 'https://github.com/REPLACE_OWNER/REPLACE_REPO/releases/download/runtime-v1/fusion-runtime-1.29GB.zip'
+    Sha   = 'bd1af6a79d7f073ab66d6cfdf1896da601602c55e821df1a5751072afd5100c0'
+    Bytes = 826929284
+    Flat  = $true
+  }
+  donor = @{
+    Asset = 'IG5-1.0.0-Windows-x64-dsh021-full-20261010.zip'
+    Url   = 'https://github.com/Minglink/dsh-infinite-gen-5/releases/download/v1.0.0-dsh021-20261010/IG5-1.0.0-Windows-x64-dsh021-full-20261010.zip'
+    Sha   = 'a2459ddca1f19e5eec2d7918c504f133889809800a0b277e1e379d3ce1459b54'
+    Bytes = 1064580056
+    Flat  = $false
+  }
+}
 
 $runtimeDir = Join-Path $FusionRoot 'vendor\runtimes'
 $ghidraManifest = Join-Path $runtimeDir 'ghidra\runtime.json'
@@ -50,37 +76,74 @@ if ($VerifyOnly) {
   exit 1
 }
 
-# 1) 取压缩包
-$work = Join-Path $env:TEMP 'ig5-runtime-dl'
-New-Item -ItemType Directory -Force -Path $work | Out-Null
-$zip = if ($Archive) { $Archive } else { Join-Path $work $Asset }
+# ── 选定分发源 ─────────────────────────────────────────────────────
+$pick = $Source
+if ($pick -eq 'auto') { $pick = 'repo' }
+$meta = $Sources[$pick]
+Write-Host "`n分发源: $pick  ($($meta.Asset))"
 
-if (-not (Test-Path $zip)) {
-  Write-Host "`n=== 下载 $Asset (1.06 GB) ==="
-  Write-Host "来源: $Url"
-  # curl 支持断点续传，中断后重跑本脚本会接着下
-  & curl.exe -L --fail --retry 8 --retry-delay 5 --retry-all-errors -C - -o $zip --connect-timeout 30 $Url
-  if ($LASTEXITCODE -ne 0) { throw "下载失败（exit $LASTEXITCODE）。可手动下载后传 -Archive 路径。" }
+# 若 repo 源还是占位符且用户没显式指定，回退 donor
+if ($pick -eq 'repo' -and $meta.Url -match 'REPLACE_') {
+  if ($Source -eq 'auto') {
+    Write-Host "  ⚠ repo 源 URL 未配置（仍是 REPLACE_ 占位符），自动回退到 donor 发行包"
+    $pick = 'donor'
+    $meta = $Sources[$pick]
+    Write-Host "  改用: $pick  ($($meta.Asset))"
+  } else {
+    throw "setup/install-runtime.ps1 里的 repo 源 URL 仍是占位符，请改成你自己的 Release 地址，或改用 -Source donor"
+  }
 }
 
-# 2) 校验大小与哈希（供体 install.ps1 同一口径）
+# ── 取压缩包 ───────────────────────────────────────────────────────
+$work = Join-Path $env:TEMP 'ig5-runtime-dl'
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+$zip = if ($Archive) { $Archive } else { Join-Path $work $meta.Asset }
+
+# 预先算好可读大小，避免在双引号里内联除法（PowerShell 会把 1GB 当单位字面量）
+$sizeGb = [math]::Round($meta.Bytes / 1073741824, 2)
+
+if (-not (Test-Path $zip)) {
+  Write-Host "`n=== 下载 $($meta.Asset) ($sizeGb GB) ==="
+  Write-Host "来源: $($meta.Url)"
+  # curl 支持断点续传，中断后重跑本脚本会接着下
+  & curl.exe -L --fail --retry 8 --retry-delay 5 --retry-all-errors -C - -o $zip --connect-timeout 30 $meta.Url
+  if ($LASTEXITCODE -ne 0) {
+    throw "下载失败（exit $LASTEXITCODE）。可手动下载后传 -Archive 路径。"
+  }
+}
+
+# ── 校验大小与哈希 ─────────────────────────────────────────────────
 $actualBytes = (Get-Item $zip).Length
-if ($actualBytes -ne $Bytes) { throw "大小不符: 期望 $Bytes, 实际 $actualBytes" }
+if ($actualBytes -ne $meta.Bytes) {
+  throw "大小不符: 期望 $($meta.Bytes), 实际 $actualBytes`n若压缩包来自别处，请核对 -Source。"
+}
 Write-Host "`n=== 校验 SHA-256 ==="
 $actualSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-if ($actualSha -ne $Sha) { throw "SHA-256 不符:`n  期望 $Sha`n  实际 $actualSha" }
+if ($actualSha -ne $meta.Sha) {
+  throw "SHA-256 不符:`n  期望 $($meta.Sha)`n  实际 $actualSha"
+}
 Write-Host "SHA-256 OK"
 
-# 3) 解包：发行包内是 plugin/runtimes/...，取 runtimes 目录
+# ── 解包（兼容压平版与供体版）─────────────────────────────────────
 Write-Host "`n=== 解包 ==="
 $stage = Join-Path $work 'stage'
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 Expand-Archive -Path $zip -DestinationPath $stage -Force
 
-$found = Get-ChildItem $stage -Recurse -Directory -Filter 'runtimes' |
-  Where-Object { Test-Path (Join-Path $_.FullName 'ghidra\runtime.json') } |
-  Select-Object -First 1
-if (-not $found) { throw "压缩包里没找到含 ghidra\runtime.json 的 runtimes 目录，包结构可能变了" }
+$found = $null
+if (Test-Path (Join-Path $stage 'ghidra\runtime.json')) {
+  # 压平版：根目录直接是 ghidra/ x64dbg/
+  $found = $stage
+} else {
+  # 供体版：外层 plugin/runtimes/
+  $hit = Get-ChildItem $stage -Recurse -Directory -Filter 'runtimes' -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path (Join-Path $_.FullName 'ghidra\runtime.json') } |
+    Select-Object -First 1
+  if ($hit) { $found = $hit.FullName }
+}
+if (-not $found) {
+  throw "压缩包里没找到含 ghidra\runtime.json 的目录。包结构可能变了，请检查 $zip"
+}
 
 if (Test-Path $runtimeDir) {
   $backup = "$runtimeDir.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -88,7 +151,7 @@ if (Test-Path $runtimeDir) {
   Move-Item $runtimeDir $backup
 }
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $runtimeDir) | Out-Null
-Move-Item $found.FullName $runtimeDir
+Move-Item $found $runtimeDir
 
 Write-Host "`n=== 完成 ==="
 Show-Status
