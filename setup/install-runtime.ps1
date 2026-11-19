@@ -37,7 +37,7 @@ if (-not $FusionRoot) {
 $Sources = @{
   repo  = @{
     Asset = 'fusion-runtime-1.29GB.zip'
-    Url   = 'https://github.com/REPLACE_OWNER/REPLACE_REPO/releases/download/runtime-v1/fusion-runtime-1.29GB.zip'
+    Url   = 'https://github.com/ikunwd91/dsh-purge-fusion/releases/download/runtime-v1/fusion-runtime-1.29GB.zip'
     Sha   = 'bd1af6a79d7f073ab66d6cfdf1896da601602c55e821df1a5751072afd5100c0'
     Bytes = 826929284
     Flat  = $true
