@@ -449,6 +449,10 @@ window.__ModuleLoader__.load({ id: "dsh-purge", factory: (require) => {
 			"hooksDeny.bypass": "放行 hooks 的 deny / ask（补丁 30 / 31 / 64 / 65）",
 			"hooksDeny.hint": "关掉后，用户自己的 PreToolUse / UserPromptSubmit / Stop hook 的 deny 会按官方逻辑生效。官方 ask 分支本身是空操作，关开关不会弹出审批框。改完后点「应用」并重启才写进宿主。",
 			"saved.hooksDeny": "已保存",
+			"jailbreak.title": "破甲预设",
+			"jailbreak.hint": "选一个破甲系统提示词注入到每次会话（写在 ~/.dsh/dsh-purge/jailbreak-preset）。选「关闭」即删除配置。改完重启 DSH 生效。",
+			"jailbreak.off": "关闭（不注入）",
+			"jailbreak.saved": "破甲预设已保存，重启 DSH 生效。",
 			"continue.title": "失败重试 / 继续",
 			"continue.hint": "请求失败会自动重试；异常停止或中断可点「继续」或自动续跑。自己点停止不会自动继续。次数用完后需新开一轮。",
 			"continue.autoRetry": "失败自动重试",
@@ -789,6 +793,10 @@ window.__ModuleLoader__.load({ id: "dsh-purge", factory: (require) => {
 			"hooksDeny.bypass": "Bypass hook deny / ask (patches 30 / 31 / 64 / 65)",
 			"hooksDeny.hint": "When off, your own PreToolUse / UserPromptSubmit / Stop hook deny runs as the official host wrote it. The official ask branch is a no-op; turning this off will not show an approval dialog. Click Apply and restart to write the host files.",
 			"saved.hooksDeny": "Saved",
+			"jailbreak.title": "Jailbreak preset",
+			"jailbreak.hint": "Pick a jailbreak system prompt to inject into every session (written to ~/.dsh/dsh-purge/jailbreak-preset). Choose Off to remove it. Restart DSH after changing.",
+			"jailbreak.off": "Off (no injection)",
+			"jailbreak.saved": "Jailbreak preset saved. Restart DSH to take effect.",
 			"continue.title": "Retry / Continue",
 			"continue.hint": "Failed requests auto-retry. After an abnormal stop or interrupt, use Continue or auto-resume. A manual stop never auto-continues. Counts reset after a completed turn.",
 			"continue.autoRetry": "Auto-retry on failure",
@@ -1235,6 +1243,61 @@ body:not([data-ds-dark-theme]) .dshp-auth-ops button.primary{background:var(--ds
 							onChange: (e) => save(e.target.checked),
 						}),
 						t("hooksDeny.bypass"),
+					),
+				),
+			);
+		}
+
+		function JailbreakPresetSection() {
+			const t = useT();
+			const [cfg, setCfg] = useState(null);
+			const [notice, setNotice] = useState({ kind: "idle", text: "" });
+			const [busy, setBusy] = useState(false);
+
+			useEffect(() => {
+				apiJson("/dsh-purge/jailbreak-preset")
+					.then((d) => { if (d && d.ok) setCfg(d); })
+					.catch(() => {});
+			}, []);
+
+			const save = (preset) => {
+				if (!cfg || busy) return;
+				setCfg({ ...cfg, current: preset });
+				setBusy(true);
+				apiJson("/dsh-purge/jailbreak-preset", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ preset }),
+				})
+					.then((d) => {
+						if (d && d.ok) {
+							setCfg({ ...cfg, current: d.current || "" });
+							setNotice({ kind: "ok", text: t("jailbreak.saved") });
+						} else {
+							setNotice({ kind: "error", text: t("err.save", { error: (d && d.error) || "" }) });
+						}
+					})
+					.catch((e) => setNotice({ kind: "error", text: t("err.save", { error: e.message }) }))
+					.finally(() => setBusy(false));
+			};
+
+			if (!cfg) return null;
+			const presets = Array.isArray(cfg.presets) ? cfg.presets : [];
+			return h("div", { className: "dshp-cr", style: { marginTop: 12 } },
+				h("div", { className: "dshp-sub" },
+					h("h4", null, t("jailbreak.title")),
+					noticeNode(notice),
+				),
+				h("p", { className: "dshp-hint", style: { margin: "0 0 4px", color: "var(--dshp-mute)", fontSize: 12 } }, t("jailbreak.hint")),
+				h("div", { className: "dshp-cr-row" },
+					h("select", {
+						className: "dshp-field",
+						value: cfg.current || "",
+						disabled: busy,
+						onChange: (e) => save(e.target.value),
+					},
+						h("option", { value: "" }, t("jailbreak.off")),
+						...presets.map((p) => h("option", { value: p.name }, p.label || p.name)),
 					),
 				),
 			);
@@ -1949,6 +2012,7 @@ body:not([data-ds-dark-theme]) .dshp-auth-ops button.primary{background:var(--ds
 				h("div", { className: "dshp-bar", "aria-hidden": "true" }, h("i", { style: { width: pct + "%" } })),
 				h(PatchGroups, { state: s }),
 				h(HooksDenySection, { onSaved: loadAll }),
+				h(JailbreakPresetSection),
 				h("div", { className: "dshp-row", style: { marginTop: 14 } },
 					h(Btn, { kind: "primary", disabled: patchBusy || uninstallBusy || !overrideLoaded, onClick: () => doAction("apply", "action.apply") }, patchBusy ? t("btn.apply.busy") : t("btn.apply")),
 					h(Btn, { kind: "danger", disabled: patchBusy || uninstallBusy, onClick: () => doAction("revert", "action.revert") }, t("btn.revert")),
