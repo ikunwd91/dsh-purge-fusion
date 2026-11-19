@@ -254,5 +254,32 @@ if ($DryRun) {
 
 Write-Host ""
 Write-Host "=== 完成 ==="
+
+# ── app.asar 检查：补丁写进 resources\app，但 Electron 优先读 app.asar ──
+if (-not $DryRun) {
+  $dshRoot = $null
+  $proc = Get-Process -Name "DeepSeek Harness","DeepSeek*" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path } | Select-Object -First 1
+  if ($proc) { $dshRoot = Split-Path -Parent $proc.Path }
+  if (-not $dshRoot) {
+    try {
+      $deskExe = Get-Content (Join-Path $DshHome 'dsh-purge\desktop-install.txt') -ErrorAction Stop
+      if ($deskExe) { $dshRoot = Split-Path -Parent $deskExe.Trim() }
+    } catch {}
+  }
+  if ($dshRoot) {
+    $asar = Join-Path $dshRoot 'resources\app.asar'
+    if (Test-Path $asar) {
+      Write-Host ""
+      Write-Host "⚠ 检测到 app.asar 仍存在：" -ForegroundColor Yellow
+      Write-Host "    $asar"
+      Write-Host "  Electron 会优先读它，插件补丁写进 resources\app 后对运行中的 DSH 不可见。"
+      Write-Host "  在插件面板点过「应用」之后，跑一次："
+      Write-Host "    .\setup\take-effect.ps1"
+      Write-Host "  它会校验 app 目录完整性再把 app.asar 改名（有 -Rollback 回滚）。"
+    }
+  }
+}
+
 Write-Host "完全退出 DSH 桌面端（托盘也退）再启动。"
 Write-Host "启动后调用 purge_engine_tools 确认 toolset=full / activeCount=43。"
