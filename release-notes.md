@@ -8,6 +8,9 @@
 - shim 状态语义修正：`gatherState()` 新增 `shim_applies` / `desktop_cli_bin`。desktop 宿主不注入 shim（#82 profile fallback），官方 `runtime/cli/bin` 布局只有 `dsh.cmd`，`dsh.ps1` / `dsh` 本来就不存在 —— 现在显示 `n/a` 而不是永远修不好的 `missing`。
 - `shimIsPatched()` 同时识别 `dsh-purge shim` 与 `dsh-purge cli entry` 两种标记，桌面 `dsh.cmd` 不再被误报成 `original`，`shimNeedsPatch()` 不再空转。
 - `bin/dsh-purge.js --status`：未定位宿主时不再打印 `undefined`，统一显示 `n/a`。
+- **安装源改指向本仓库**：`package.json` 的 `repository` / `homepage` / `bugs` / `dsh.install.{tarball,zip,git}` 从旧仓库 `YuJunZhiXue/dsh-purge` 改到 `ikunwd91/dsh-purge-fusion`（分支 `main`）。重装插件时不再从旧仓库拉到无修复的旧版。
+- **自动更新源同步**：`lib/update.js` 的 `REPO` / `STABLE_REF` 改指 `ikunwd91/dsh-purge-fusion` / `main`，自动更新不再回退到旧仓库；发版 CI（`.github/workflows/release.yml`）触发分支与仓库条件同步为 `main` / 本仓库。
+- **装完即自动恢复**：`cordis.patch.yml` 与 `DEFAULTS` 的 `autoApplyOnStart` 改为 `true`。装完插件 / 每次启动自动把补丁 + shim 恢复到宿主目录，已对齐时不重复写、不重启，只有出现 pending 漂移才自动重打。
 
 ## English
 
@@ -17,6 +20,9 @@
 - Shim status semantics fixed: `gatherState()` now exposes `shim_applies` / `desktop_cli_bin`. Desktop hosts never inject shims (#82 profile fallback) and the official `runtime/cli/bin` layout only ships `dsh.cmd`, so `dsh.ps1` / `dsh` report `n/a` instead of a permanently missing file.
 - `shimIsPatched()` recognizes both `dsh-purge shim` and `dsh-purge cli entry` markers, so the desktop `dsh.cmd` is no longer misreported as `original` and `shimNeedsPatch()` stops spinning.
 - `bin/dsh-purge.js --status` prints `n/a` instead of `undefined` when no host is located.
+- **Install source points at this repo**: `package.json` `repository` / `homepage` / `bugs` / `dsh.install.{tarball,zip,git}` now use `ikunwd91/dsh-purge-fusion` (branch `main`) instead of the old `YuJunZhiXue/dsh-purge`, so reinstalling no longer pulls the unfixed old build.
+- **Auto-update source synced**: `lib/update.js` `REPO` / `STABLE_REF` now use `ikunwd91/dsh-purge-fusion` / `main`; the release workflow triggers on `main` for this repo.
+- **Auto-apply after install**: `cordis.patch.yml` and `DEFAULTS` set `autoApplyOnStart: true`. The plugin re-applies patches + shim to the host on install / every boot, no-ops when already aligned, and only re-applies when pending drift is detected.
 
 # 1.1.71
 
