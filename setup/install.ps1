@@ -255,31 +255,22 @@ if ($DryRun) {
 Write-Host ""
 Write-Host "=== 完成 ==="
 
-# ── app.asar 检查：补丁写进 resources\app，但 Electron 优先读 app.asar ──
+# ── 全自动应用：解包 + 打补丁（替代「打开面板点应用」）──
 if (-not $DryRun) {
-  $dshRoot = $null
-  $proc = Get-Process -Name "DeepSeek Harness","DeepSeek*" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path } | Select-Object -First 1
-  if ($proc) { $dshRoot = Split-Path -Parent $proc.Path }
-  if (-not $dshRoot) {
-    try {
-      $deskExe = Get-Content (Join-Path $DshHome 'dsh-purge\desktop-install.txt') -ErrorAction Stop
-      if ($deskExe) { $dshRoot = Split-Path -Parent $deskExe.Trim() }
-    } catch {}
-  }
-  if ($dshRoot) {
-    $asar = Join-Path $dshRoot 'resources\app.asar'
-    if (Test-Path $asar) {
-      Write-Host ""
-      Write-Host "⚠ 检测到 app.asar 仍存在：" -ForegroundColor Yellow
-      Write-Host "    $asar"
-      Write-Host "  Electron 会优先读它，插件补丁写进 resources\app 后对运行中的 DSH 不可见。"
-      Write-Host "  在插件面板点过「应用」之后，跑一次："
-      Write-Host "    .\setup\take-effect.ps1"
-      Write-Host "  它会校验 app 目录完整性再把 app.asar 改名（有 -Rollback 回滚）。"
-    }
+  $running = @(Get-Process -Name "DeepSeek Harness","DeepSeek*" -ErrorAction SilentlyContinue | Where-Object { $_.Path })
+  $autoApply = Join-Path $RepoRoot 'setup\auto-apply.ps1'
+  if ($running.Count -eq 0 -and (Test-Path $autoApply)) {
+    Write-Host ""
+    Write-Host "程序未在运行，自动执行「解包 + 应用」…" -ForegroundColor Cyan
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $autoApply
+    Write-Host ""
+  } else {
+    Write-Host ""
+    Write-Host "完全退出 DSH 桌面端（托盘也退）后，跑一条命令完成解包 + 应用："
+    Write-Host "    .\setup\auto-apply.ps1"
+    Write-Host "（它会自动解包 app.asar 并写入全部补丁，不用再点面板「应用」。）"
   }
 }
 
-Write-Host "完全退出 DSH 桌面端（托盘也退）再启动。"
-Write-Host "启动后调用 purge_engine_tools 确认 toolset=full / activeCount=43。"
+Write-Host ""
+Write-Host "完成后启动 DSH，调用 purge_engine_tools 确认 toolset=full / activeCount=43。"
