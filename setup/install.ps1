@@ -148,8 +148,21 @@ if ($SkipRuntime) {
 } else {
   $rtArgs = @{ FusionRoot = (Join-Path $RepoRoot 'lib\fusion') }
   if ($RuntimeArchive) { $rtArgs.Archive = $RuntimeArchive }
-  & $runtimeScript @rtArgs
-  if ($LASTEXITCODE -ne 0) { Write-Host "  运行时安装未成功，可稍后单独跑 setup\install-runtime.ps1" }
+  # 幂等：已有运行时先查一遍，齐全就不重复下载 788 MB
+  $ghidraManifest = Join-Path $RepoRoot 'lib\fusion\vendor\runtimes\ghidra\runtime.json'
+  $x64dbgManifest = Join-Path $RepoRoot 'lib\fusion\vendor\runtimes\x64dbg\runtime.json'
+  if ((Test-Path $ghidraManifest) -and (Test-Path $x64dbgManifest)) {
+    Write-Host "  运行时已就位，跳过下载"
+  } else {
+    & $runtimeScript @rtArgs
+  }
+  # 不用 $LASTEXITCODE 判断——调用 PowerShell 脚本不会可靠地传递退出码
+  # （它反映的是最后一次外部程序调用，比如 curl.exe，而不是脚本自身的 exit）。
+  # 直接查产物更准。
+  $rtOk = (Test-Path $ghidraManifest) -and (Test-Path $x64dbgManifest)
+  if (-not $rtOk) {
+    Write-Host "  ⚠ 运行时未就位，可稍后单独跑 setup\install-runtime.ps1"
+  }
 }
 
 # ── 4. 自检 ────────────────────────────────────────────────────────
