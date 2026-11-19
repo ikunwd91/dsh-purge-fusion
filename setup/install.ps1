@@ -201,18 +201,37 @@ if ($DryRun) {
   $nodeExe = $null
   $cmd = Get-Command node -ErrorAction SilentlyContinue
   if ($cmd) { $nodeExe = $cmd.Source }
+
   if (-not $nodeExe) {
-    $deskExe = $null
-    try { $deskExe = Get-Content (Join-Path $DshHome 'dsh-purge\desktop-install.txt') -ErrorAction Stop } catch {}
+    # 先问正在运行的 DSH 进程要安装路径 —— 最准，不用猜
     $searchRoots = @()
-    if ($deskExe) { $searchRoots += (Split-Path -Parent $deskExe.Trim()) }
-    foreach ($c in @("D:\DeepSeek-Harness-0.2.0-", "$env:LOCALAPPDATA\Programs")) {
-      if (Test-Path $c) { $searchRoots += $c }
+    $dshProc = Get-Process -Name "DeepSeek Harness","DeepSeek*" -ErrorAction SilentlyContinue |
+      Where-Object { $_.Path } | Select-Object -First 1
+    if ($dshProc) { $searchRoots += (Split-Path -Parent $dshProc.Path) }
+    try {
+      $deskExe = Get-Content (Join-Path $DshHome 'dsh-purge\desktop-install.txt') -ErrorAction Stop
+      if ($deskExe) { $searchRoots += (Split-Path -Parent $deskExe.Trim()) }
+    } catch {}
+    # 再扫常见安装位置
+    foreach ($c in @(
+      "D:\DeepSeek-Harness-0.2.0-", "C:\DeepSeek-Harness-0.2.0-",
+      "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}"
+    )) {
+      if ($c -and (Test-Path $c)) { $searchRoots += $c }
     }
-    foreach ($r in $searchRoots) {
-      $hit = Get-ChildItem $r -Recurse -Depth 6 -Filter "node.exe" -File -ErrorAction SilentlyContinue |
+
+    foreach ($r in ($searchRoots | Select-Object -Unique)) {
+      # 优先找 Electron 内嵌的 node
+      $hit = Get-ChildItem $r -Recurse -Depth 8 -Filter "node.exe" -File -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -match 'runtime.*node.*bin' } | Select-Object -First 1
       if ($hit) { $nodeExe = $hit.FullName; break }
+    }
+
+    # 还找不到：DSH 本体是 Electron，可直接拿它当 node 跑脚本
+    if (-not $nodeExe -and $dshProc) {
+      $nodeExe = $dshProc.Path
+      $env:ELECTRON_RUN_AS_NODE = '1'
+      Write-Host "  用 DSH 本体当 node（ELECTRON_RUN_AS_NODE=1）"
     }
   }
 
@@ -225,7 +244,10 @@ if ($DryRun) {
     try {
       & $nodeExe (Join-Path $RepoRoot 'lib\fusion\selfcheck.mjs')
       $code = $LASTEXITCODE
-    } finally { Pop-Location }
+    } finally {
+      Pop-Location
+      Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+    }
     if ($code -ne 0) { Write-Host "`n自检有失败项，请查看上面输出。" } else { Write-Host "`n自检通过。" }
   }
 }
