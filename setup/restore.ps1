@@ -100,10 +100,30 @@ function Test-DirCandidate([string]$path) {
 
 function Find-Zip {
     if ($SourceZip -and (Test-ZipCandidate $SourceZip)) { return $SourceZip }
+    # 1) 各盘根 + 常用目录的顶层，按精确文件名
     foreach ($root in $searchRoots) {
         foreach ($n in $zipNames) {
             $cand = Join-Path $root $n
             if (Test-ZipCandidate $cand) { return $cand }
+        }
+    }
+    # 2) 桌面 / 下载 / 文档 / TEMP 的浅层子目录（深度 3）：先精确名，再关键字
+    $deepRoots = @()
+    foreach ($r in $searchRoots) {
+        if ($r -match '(?i)(Desktop|Downloads|Documents|Temp)') { $deepRoots += $r }
+    }
+    foreach ($root in $deepRoots) {
+        foreach ($n in $zipNames) {
+            foreach ($hit in (Get-ChildItem -LiteralPath $root -Filter $n -File -Recurse -Depth 3 -ErrorAction SilentlyContinue)) {
+                if (Test-ZipCandidate $hit.FullName) { return $hit.FullName }
+            }
+        }
+    }
+    foreach ($root in $deepRoots) {
+        foreach ($hit in (Get-ChildItem -LiteralPath $root -Filter '*.zip' -File -Recurse -Depth 3 -ErrorAction SilentlyContinue)) {
+            if ($hit.Name -match '(?i)fusion|purge|dsh|main') {
+                if (Test-ZipCandidate $hit.FullName) { return $hit.FullName }
+            }
         }
     }
     return $null
