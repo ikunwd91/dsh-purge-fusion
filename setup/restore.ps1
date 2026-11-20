@@ -12,8 +12,13 @@
 #   4. 跑 preflight.ps1（环境自检，只读）
 #   5. 跑 install.ps1（junction + profile + 自动找 1.29GB 运行时包 + 自动解包+应用）
 #
-# 1.29GB 运行时包（fusion-runtime-1.29GB.zip）不用管：install 会按「文件名+大小」
-# 自动搜到它（桌面/下载/各盘根都行），免下载。
+# 两个包别搞混：
+#   · 源码包  main.zip / dsh-purge-fusion-main.zip（几 MB）—— 本脚本要的就是这个
+#   · 运行时包 fusion-runtime-1.29GB.zip（1.29 GB）—— 不是你在这里要下的，install 阶段
+#     由 setup\install-runtime.ps1 按「文件名+大小」在桌面/下载/各盘根自动找，免下载
+#
+# 探测用的是「压缩包里有没有 lib/fusion/index.js」，不是文件名。所以旧 dsh-purge 包、
+# 一键包残留（dsh-purge-master.zip）、1.29GB 运行时包都不会被误当成源码。
 #
 # 可选参数：
 #   -DestRoot 'D:\'           解压目标盘（默认 D:\）
@@ -36,6 +41,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 用于读压缩包条目：判断一个 zip 到底是不是泛融合源码包
+Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
 function Say([string]$m) { Write-Host $m }
 function Ok([string]$m) { Write-Host ("  ✓ " + $m) -ForegroundColor Green }
@@ -88,8 +96,14 @@ foreach ($p in $extra) {
     }
 }
 
+# 运行时包不是源码，restore 阶段一律不碰（它由 install-runtime.ps1 负责）
+$runtimePattern = '(?i)runtime|1\.29GB|IG5-'
+
+$script:rejectedZips = @()
+
 function Test-ZipCandidate([string]$path) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    if ((Split-Path $path -Leaf) -match $runtimePattern) { return $false }
     $len = (Get-Item -LiteralPath $path).Length
     return ($len -gt 1000000)
 }
@@ -98,13 +112,38 @@ function Test-DirCandidate([string]$path) {
     return (Test-Path -LiteralPath (Join-Path $path 'lib\fusion\index.js'))
 }
 
+# 真源码包判定：必须含 lib/fusion/index.js。
+# 只按名字匹配会误吃旧 dsh-purge 包、一键包残留（dsh-purge-master.zip）之类。
+function Test-ZipIsFusionSource([string]$path) {
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+        try {
+            foreach ($entry in $zip.Entries) {
+                $n = $entry.FullName -replace '\\', '/'
+                if ($n -match '(^|/)lib/fusion/index\.js$') { return $true }
+            }
+        } finally { $zip.Dispose() }
+    } catch { }
+    return $false
+}
+
+function Select-FusionZip([string]$path) {
+    if (-not (Test-ZipCandidate $path)) { return $false }
+    if (Test-ZipIsFusionSource $path) { return $true }
+    if ($script:rejectedZips -notcontains $path) { $script:rejectedZips += $path }
+    return $false
+}
+
 function Find-Zip {
-    if ($SourceZip -and (Test-ZipCandidate $SourceZip)) { return $SourceZip }
+    if ($SourceZip) {
+        if (Select-FusionZip $SourceZip) { return $SourceZip }
+        Warn ("-SourceZip 指定的不是泛融合源码包（缺 lib/fusion/index.js）：$SourceZip")
+    }
     # 1) 各盘根 + 常用目录的顶层，按精确文件名
     foreach ($root in $searchRoots) {
         foreach ($n in $zipNames) {
             $cand = Join-Path $root $n
-            if (Test-ZipCandidate $cand) { return $cand }
+            if (Select-FusionZip $cand) { return $cand }
         }
     }
     # 2) 桌面 / 下载 / 文档 / TEMP 的浅层子目录（深度 3）：先精确名，再关键字
@@ -115,16 +154,27 @@ function Find-Zip {
     foreach ($root in $deepRoots) {
         foreach ($n in $zipNames) {
             foreach ($hit in (Get-ChildItem -LiteralPath $root -Filter $n -File -Recurse -Depth 3 -ErrorAction SilentlyContinue)) {
-                if (Test-ZipCandidate $hit.FullName) { return $hit.FullName }
+                if (Select-FusionZip $hit.FullName) { return $hit.FullName }
             }
         }
     }
     foreach ($root in $deepRoots) {
         foreach ($hit in (Get-ChildItem -LiteralPath $root -Filter '*.zip' -File -Recurse -Depth 3 -ErrorAction SilentlyContinue)) {
             if ($hit.Name -match '(?i)fusion|purge|dsh|main') {
-                if (Test-ZipCandidate $hit.FullName) { return $hit.FullName }
+                if (Select-FusionZip $hit.FullName) { return $hit.FullName }
             }
         }
+    }
+    return $null
+}
+
+# 只用于给出提示：1.29GB 运行时包会被 install-runtime.ps1 自动找到，不需要在这里复用
+function Find-RuntimeZip {
+    foreach ($root in $searchRoots) {
+        if ($root -notmatch '(?i)(Desktop|Downloads|Documents|Temp)') { continue }
+        $hit = Get-ChildItem -LiteralPath $root -Filter '*fusion-runtime*' -File -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($hit) { return $hit.FullName }
     }
     return $null
 }
@@ -150,7 +200,14 @@ function Find-Dir {
 
 $foundZip = Find-Zip
 $foundDir = Find-Dir
+$foundRuntime = Find-RuntimeZip
 
+if ($script:rejectedZips.Count -gt 0) {
+    foreach ($rj in $script:rejectedZips) {
+        Warn ("跳过不是泛融合源码的压缩包: $rj")
+    }
+}
+if ($foundRuntime) { Ok ("探测到 1.29GB 运行时包（install 阶段会自动用，无需在这里复用）: $foundRuntime") }
 if ($foundZip) { Ok ("探测到已下载源码包: $foundZip") }
 if ($foundDir) { Ok ("探测到已解压源码: $foundDir") }
 
@@ -231,11 +288,23 @@ if ($DryRun) {
         Remove-Item -LiteralPath $targetDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     Expand-Archive -Path $foundZip -DestinationPath $DestRoot -Force
-    # GitHub zip 解压出来是 <repo>-<branch> 目录，统一成 dsh-purge-fusion-main
-    $extracted = Get-ChildItem $DestRoot -Directory |
-        Where-Object { $_.Name -match 'dsh-purge-fusion' } |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $extracted) { Fail "解压后找不到 dsh-purge-fusion* 目录"; exit 1 }
+    # 按「含 lib\fusion\index.js」定位解压出来的源码根，不靠目录名猜
+    $extracted = $null
+    foreach ($d in (Get-ChildItem -LiteralPath $DestRoot -Directory -ErrorAction SilentlyContinue)) {
+        if (Test-Path -LiteralPath (Join-Path $d.FullName 'lib\fusion\index.js')) { $extracted = $d; break }
+    }
+    if (-not $extracted) {
+        foreach ($d in (Get-ChildItem -LiteralPath $DestRoot -Directory -ErrorAction SilentlyContinue)) {
+            foreach ($c in (Get-ChildItem -LiteralPath $d.FullName -Directory -ErrorAction SilentlyContinue)) {
+                if (Test-Path -LiteralPath (Join-Path $c.FullName 'lib\fusion\index.js')) { $extracted = $c; break }
+            }
+            if ($extracted) { break }
+        }
+    }
+    if (-not $extracted) {
+        Fail "解压后找不到含 lib\fusion\index.js 的源码目录（压缩包不对？）"
+        exit 1
+    }
     if ($extracted.FullName -ne $targetDir) {
         if (Test-Path -LiteralPath $targetDir) { Remove-Item -LiteralPath $targetDir -Recurse -Force }
         Move-Item -LiteralPath $extracted.FullName -Destination $targetDir
