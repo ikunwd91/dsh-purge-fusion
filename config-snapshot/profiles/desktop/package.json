@@ -1,0 +1,18 @@
+{
+    "name":  "dsh-profile-desktop",
+    "private":  true,
+    "dependencies":  {
+                         "dsh-purge":  "link:D:/dsh-purge-fusion-main",
+                         "@minglink/dsh-jailbreak-workflow":  "link:D:/YOUxi/gonzuo/dsh-jailbreak-workflow"
+                     },
+    "dsh":  {
+                "profile":  {
+                                "bundles":  [
+                                                "@deepseek-ai/dsh-base",
+                                                "@deepseek-ai/dsh-web-app",
+                                                "dsh-purge",
+                                                "@minglink/dsh-jailbreak-workflow"
+                                            ]
+                            }
+            }
+}

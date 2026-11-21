@@ -1,0 +1,97 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: sikjs
+    model: deepseek-v4.1-flash
+- id: ui-settings-account
+  name: "@deepseek-ai/dsh-client-ui-settings-account"
+  config:
+    version: 1
+    step: done
+    purpose: development
+    process: standard
+    completion: completed
+    usage: detailed
+    developerTools: true
+- id: ui-chat
+  name: "@deepseek-ai/dsh-client-ui-chat"
+  config:
+    transcriptView: standard
+    performanceUsage: detailed
+- id: ui-settings
+  name: "@deepseek-ai/dsh-client-ui-settings"
+  config:
+    enabled: true
+- id: permission
+  name: "@deepseek-ai/dsh-permission-presets"
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: danger-full-access
+- id: ui-theme
+  name: "@deepseek-ai/dsh-client-ui-theme"
+  config:
+    preference: dark
+    fontSize: 22
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      wdaw:
+        displayName: wqweeq
+        apiKeyEnv: WDAW_API_KEY
+        api: openai-responses
+        baseURL: https://api.xingchiapi.com
+        models:
+          - id: gpt-6.1-sol
+            name: GPT-6.1 Sol
+            contextWindow: 1000000
+            input:
+              - text
+              - image
+      wadwad:
+        displayName: wadaww
+        apiKeyEnv: WADWAD_API_KEY
+        api: openai-completions
+        baseURL: http://114.28.145.65:23333/v1
+        models:
+          - id: "1"
+          - id: hy4flash-free
+            name: Hy4 flash
+            contextWindow: 1000000
+            maxTokens: 128000
+          - id: deepseek-flash-1017
+            name: DeepSeek-Flash-1017
+            contextWindow: 1000000
+            maxTokens: 100000
+            input:
+              - text
+              - image
+      sikjs:
+        displayName: 12元deepseek
+        apiKeyEnv: SIKJS_API_KEY
+        api: openai-completions
+        baseURL: http://mikumc.com:8848/v1
+        models:
+          - id: deepseek-v4.1-flash
+            name: DeepSeek-V4.1-Flash
+            contextWindow: 1000000
+            maxTokens: 128000
+            input:
+              - text
+              - image
+          - id: hy4flash-free
+            name: Hy4 flash
+            contextWindow: 960000
+            maxTokens: 64000
