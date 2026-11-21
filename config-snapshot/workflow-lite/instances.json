@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "instances": [
+    {
+      "id": "20261121-120424-06fa",
+      "workflow": "破甲制作",
+      "planId": "9c0f859a",
+      "mode": "auto",
+      "cwd": "D:\\YOUxi\\gonzuo",
+      "statePath": "D:\\YOUxi\\gonzuo\\.workflow-lite\\runs\\20261121-120424-06fa\\state.yaml",
+      "session": "session-943d7e06-e3e1-4651-b7b1-56e9f78a8712",
+      "createdAt": 1795233864235
+    },
+    {
+      "id": "20261121-123530-6254",
+      "workflow": "破甲制作",
+      "planId": "66f8ed83",
+      "mode": "auto",
+      "goal": "对目标模型 deepseek-v4.1-flash（OpenAI 兼容接口 http://mikumc.com:8848/v1）做系统性破甲研究，产出该模型专属破甲词、使用手册（帧矩阵 + 推回词库）与研究报告",
+      "cwd": "D:\\YOUxi\\gonzuo",
+      "session": "session-0d04cb69-f436-45e7-8951-2da2a14946fb",
+      "createdAt": 1795235730234
+    },
+    {
+      "id": "20261121-233346-be80",
+      "workflow": "破甲制作",
+      "planId": "a31d1fdd",
+      "mode": "auto",
+      "cwd": "D:\\YOUxi\\gonzuo",
+      "session": "session-61eda210-0510-4180-ad20-a3492c563a9d",
+      "createdAt": 1795275226402
+    },
+    {
+      "id": "20261121-233406-65f8",
+      "workflow": "破甲制作",
+      "planId": "8508cae7",
+      "mode": "auto",
+      "cwd": "D:\\YOUxi\\gonzuo",
+      "session": "session-61eda210-0510-4180-ad20-a3492c563a9d",
+      "createdAt": 1795275246225
+    }
+  ],
+  "current": {
+    "session-0d04cb69-f436-45e7-8951-2da2a14946fb": "20261121-123530-6254",
+    "session-61eda210-0510-4180-ad20-a3492c563a9d": "20261121-233406-65f8"
+  }
+}

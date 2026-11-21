@@ -21,6 +21,10 @@
 | `profiles/desktop/cordis.yml` | 同上 | profile 主配置 |
 | `profiles/desktop/package.json` | 同上 | profile 依赖清单 |
 | `profiles/desktop/pnpm-lock.yaml` / `pnpm-workspace.yaml` | 同上 | 锁文件 |
+| `redteam/preset-declare.json` | `%DSH_HOME%\redteam\` | 红队模块预设声明 |
+| `redteam/setup.sh` | 同上 | 红队环境装配脚本（25 KB，含工具链安装） |
+| `redteam/skills/*.md` | `%DSH_HOME%\redteam\skills\` | 22 条红队作业技能（recon / 隧道 / 凭据 / 内网 / webshell / 免杀链路） |
+| `workflow-lite/instances.json` | `%DSH_HOME%\workflow-lite\` | 工作流实例索引 |
 | `workflow-lite/workflows/*.json` | `%DSH_HOME%\workflow-lite\` | 已编排的工作流图（含 `破甲制作`） |
 | `workflow-lite/versions/破甲制作/1.json` | 同上 | 工作流版本快照 |
 | `STATUS.md` | 生成 | 67/68 补丁明细、融合层移植清单、工具面清单 |
@@ -50,6 +54,8 @@ Copy-Item .\config-snapshot\dsh-purge\*              "$H\dsh-purge\"       -Forc
 Copy-Item .\config-snapshot\agent-presets\*          "$H\.agent-presets\redteam\" -Force
 Copy-Item .\config-snapshot\profiles\desktop\*       "$H\profiles\desktop\" -Force
 Copy-Item .\config-snapshot\workflow-lite\workflows\* "$H\workflow-lite\workflows\" -Force
+Copy-Item .\config-snapshot\workflow-lite\instances.json  "$H\workflow-lite\" -Force
+Copy-Item .\config-snapshot\redteam\*                     "$H\redteam\" -Force -Recurse
 
 # 4) 打补丁 + 重启
 dsh purge apply      # 67/68 → 会跳过 MINIMAL_OFFICIAL_TOOLSET，与快照一致
